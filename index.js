@@ -332,72 +332,117 @@
     }
 
     // ---------------------------------------------------------------
+    // Wrap helper: creates the after-patch callback that wraps
+    // the component return value with OnekoOverlay.
+    // Vendetta patcher.after callback signature: (thisObj, args, returnValue)
+    // ---------------------------------------------------------------
+    function wrapWithOverlay(_this, _args, res) {
+        return React.createElement(OnekoOverlay, null, res);
+    }
+
+    // ---------------------------------------------------------------
     // Plugin return value – Vendetta format { onLoad, onUnload }
     // ---------------------------------------------------------------
     return {
         onLoad: function () {
-            // Grab React & React Native from Vendetta's metro
-            React = vendetta.metro.common.React;
-            RN = vendetta.metro.common.ReactNative;
+            // Grab React & React Native from vendetta metro
+            var metro = vendetta.metro;
+            var patcher = vendetta.patcher;
+
+            React = metro.common.React;
+            RN = metro.common.ReactNative;
             Animated = RN.Animated;
             Dimensions = RN.Dimensions;
 
             // Pre-fetch the sprite-sheet for instant display
-            try {
-                RN.Image.prefetch(SPRITE_URL);
-            } catch (_) {}
+            try { RN.Image.prefetch(SPRITE_URL); } catch (_) {}
 
             nekoSlotTaken = false;
 
-            // Patch ErrorBoundary.render to inject OnekoOverlay
-            try {
-                var EB = vendetta.metro.findByName("ErrorBoundary");
-                if (EB && EB.prototype && EB.prototype.render) {
-                    patches.push(
-                        vendetta.patcher.after(
-                            "render",
-                            EB.prototype,
-                            function (_args, result) {
-                                return React.createElement(
-                                    OnekoOverlay,
-                                    null,
-                                    result
-                                );
-                            }
-                        )
-                    );
-                    return; // success
-                }
-            } catch (_) {}
+            var patched = false;
 
-            // Fallback: try patching Chat component
+            // --- Strategy 1: Patch ErrorBoundary (class component) ---
             try {
-                var Chat = vendetta.metro.findByName("Chat", false);
-                if (Chat && Chat.default) {
+                var EB = metro.findByName("ErrorBoundary");
+                if (EB && EB.prototype && EB.prototype.render) {
+                    console.log("[oneko] Found ErrorBoundary, patching render");
                     patches.push(
-                        vendetta.patcher.after(
-                            "default",
-                            Chat,
-                            function (_args, result) {
-                                return React.createElement(
-                                    OnekoOverlay,
-                                    null,
-                                    result
-                                );
-                            }
-                        )
+                        patcher.after("render", EB.prototype, wrapWithOverlay)
                     );
+                    patched = true;
                 }
-            } catch (_) {}
+            } catch (e) {
+                console.log("[oneko] ErrorBoundary patch failed:", e);
+            }
+
+            // --- Strategy 2: Patch Navigator or AppContainer ---
+            if (!patched) {
+                var targets = [
+                    "ConnectedApp",
+                    "App",
+                    "RootNavigator",
+                    "MainTabsNavigator",
+                    "Navigator",
+                    "GuildChannel",
+                    "ChannelListScreen",
+                ];
+                for (var i = 0; i < targets.length; i++) {
+                    try {
+                        var mod = metro.findByName(targets[i], false);
+                        if (mod && mod.default) {
+                            console.log("[oneko] Found " + targets[i] + ", patching default");
+                            patches.push(
+                                patcher.after("default", mod, wrapWithOverlay)
+                            );
+                            patched = true;
+                            break;
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            // --- Strategy 3: Patch Chat as last resort ---
+            if (!patched) {
+                try {
+                    var Chat = metro.findByName("Chat", false);
+                    if (Chat && Chat.default) {
+                        console.log("[oneko] Found Chat, patching default");
+                        patches.push(
+                            patcher.after("default", Chat, wrapWithOverlay)
+                        );
+                        patched = true;
+                    }
+                } catch (_) {}
+            }
+
+            // --- Strategy 4: findByProps fallback ---
+            if (!patched) {
+                try {
+                    var AppModule = metro.findByProps("AppContainer");
+                    if (AppModule && AppModule.AppContainer) {
+                        console.log("[oneko] Found AppContainer via findByProps");
+                        patches.push(
+                            patcher.after("render", AppModule.AppContainer.prototype, wrapWithOverlay)
+                        );
+                        patched = true;
+                    }
+                } catch (_) {}
+            }
+
+            if (!patched) {
+                console.log("[oneko] WARNING: Could not find any component to patch. The cat won't appear.");
+            } else {
+                console.log("[oneko] Plugin loaded successfully!");
+            }
         },
+
         onUnload: function () {
             patches.forEach(function (unpatch) {
-                try {
-                    unpatch();
-                } catch (_) {}
+                try { unpatch(); } catch (_) {}
             });
             patches = [];
             nekoSlotTaken = false;
+            console.log("[oneko] Plugin unloaded");
         },
     };
 })();
