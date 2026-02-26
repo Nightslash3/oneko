@@ -1,0 +1,15 @@
+{
+    "name": "oneko",
+    "description": "Cat follows your finger! Only responds to touches on the top half of the screen.",
+    "authors": [
+        { "name": "adryd325", "id": "0" },
+        { "name": "Ven", "id": "0" },
+        { "name": "Nightslash3", "id": "0" }
+    ],
+    "main": "index.js",
+    "hash": "1.0.0",
+    "version": "1.0.0",
+    "vendetta": {
+        "icon": "ic_category_16px"
+    }
+}
